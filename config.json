@@ -1,0 +1,8 @@
+{
+  "smtp_host": "dd48202.kasserver.com",
+  "smtp_port": 465,
+  "smtp_user": "fussballschule@bremer-sv.de",
+  "smtp_password": "RPbV2GJKk9UGmMhWoPRS",
+  "school_notify_to": "fussballschule@bremer-sv.de",
+  "from_name": "Fußballschule Bremer SV"
+}
