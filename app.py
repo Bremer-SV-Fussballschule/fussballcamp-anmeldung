@@ -9,45 +9,36 @@ import json
 from datetime import datetime
 import os
 
+
+# ---------------- CONFIG LADEN ----------------
+def load_config():
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_path, "config.json")
+    with open(config_path, "r") as f:
+        return json.load(f)
+
+
+CFG = load_config()
+print("⚙️ GELADENE KONFIGURATION:")
+print("SMTP Host:", CFG["smtp_host"])
+print("SMTP Port:", CFG["smtp_port"])
+print("SMTP User:", CFG["smtp_user"])
+
+
 # ---------------- GOOGLE SHEET VERBINDUNG ----------------
 SCOPE = [
     "https://spreadsheets.google.com/feeds",
     "https://www.googleapis.com/auth/drive",
 ]
-
-# Lokaler Start → nutze Datei; bei Render → nutze Umgebungsvariable
-if os.path.exists("credentials.json"):
-    CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
-else:
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not creds_json:
-        raise ValueError("❌ GOOGLE_CREDENTIALS_JSON nicht gesetzt!")
-    CREDS = Credentials.from_service_account_info(json.loads(creds_json), scopes=SCOPE)
+CREDS = Credentials.from_service_account_info(json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON"))) \
+    if os.environ.get("GOOGLE_CREDENTIALS_JSON") else \
+    Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
 
 CLIENT = gspread.authorize(CREDS)
 SHEET = CLIENT.open_by_key("1b26Bz5KfPo1tePKBJ7_3tCM4kpKP5PRCO2xdVr0MMOo").sheet1
 
-# ---------------- KONFIGURATION LADEN ----------------
-def load_config():
-    base_path = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(base_path, "config.json")
-    if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            return json.load(f)
-    else:
-        # Fallback für Render: aus Umgebungsvariablen
-        return {
-            "smtp_host": os.environ.get("SMTP_HOST"),
-            "smtp_port": int(os.environ.get("SMTP_PORT", 465)),
-            "smtp_user": os.environ.get("SMTP_USER"),
-            "smtp_password": os.environ.get("SMTP_PASSWORD"),
-            "from_name": os.environ.get("FROM_NAME", "Fußballschule"),
-            "school_notify_to": os.environ.get("SCHOOL_NOTIFY_TO", "fussballschule@bremer-sv.de"),
-        }
 
-CFG = load_config()
-
-# ---------------- E-MAIL FUNKTION ----------------
+# ---------------- E-MAIL FUNKTION (TLS Port 587) ----------------
 def send_email(to_address, subject, body):
     msg = MIMEMultipart()
     msg["From"] = f"{CFG['from_name']} <{CFG['smtp_user']}>"
@@ -56,11 +47,11 @@ def send_email(to_address, subject, body):
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
     context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
 
     try:
-        with smtplib.SMTP_SSL(CFG["smtp_host"], CFG["smtp_port"], context=context, timeout=20) as server:
+        print(f"📨 Verbinde zu {CFG['smtp_host']} (TLS, Port {CFG['smtp_port']})...")
+        with smtplib.SMTP(CFG["smtp_host"], CFG["smtp_port"], timeout=20) as server:
+            server.starttls(context=context)
             server.login(CFG["smtp_user"], CFG["smtp_password"])
             server.send_message(msg)
         print(f"✅ E-Mail erfolgreich an {to_address} gesendet.")
@@ -68,10 +59,12 @@ def send_email(to_address, subject, body):
         print(f"❌ Fehler beim E-Mail-Versand: {e}")
         raise
 
+
 # ---------------- ANMELDUNG VERARBEITEN ----------------
 def save_to_sheet(vorname, nachname, alter, telefon, email, frueh, allergien, anmerkung):
     zeitstempel = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
     SHEET.append_row([vorname, nachname, alter, telefon, email, frueh, allergien, anmerkung, zeitstempel])
+
 
 def anmelden():
     if not (vorname.value and nachname.value and email.value):
@@ -118,17 +111,19 @@ Zeit: {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}
 """
         send_email(CFG["school_notify_to"], f"Neue Anmeldung: {vorname.value} {nachname.value}", orga_text)
 
-        ui.notify(f"Anmeldung für {vorname.value} {nachname.value} gespeichert & Mails versendet.", color="green")
+        ui.notify(f"✅ Anmeldung für {vorname.value} {nachname.value} gespeichert & Mails versendet.", color="green")
 
+        # Felder leeren
         vorname.value = nachname.value = alter.value = telefon.value = email.value = ""
         allergien.value = anmerkung.value = ""
         frueh.value = "Keine"
 
     except Exception as e:
-        ui.notify(f"Fehler bei der Anmeldung: {e}", color="red")
+        ui.notify(f"❌ Fehler bei der Anmeldung: {e}", color="red")
         print(e)
 
-# ---------------- DESIGN / UI ----------------
+
+# ---------------- DESIGN ----------------
 ui.add_head_html("""
 <style>
 body {
@@ -146,8 +141,6 @@ body {
     border-radius: 1rem;
     box-shadow: 0 6px 25px rgba(0,0,0,0.3);
     padding: 2rem;
-    z-index: 2;
-    position: relative;
 }
 .titlebox {
     background-color: rgba(255,255,255,0.9);
@@ -184,10 +177,18 @@ hr {
     margin: 1rem auto;
     border-radius: 2px;
 }
+.q-menu, .q-dialog, .q-select__dropdown-icon, .q-option {
+    color: #002B7F !important;
+    background: white !important;
+}
+.q-notification__message {
+    color: white !important;
+}
 </style>
 """)
 
-# ---------------- UI ----------------
+
+# ---------------- HEADER & FORM ----------------
 with ui.column().classes("w-full max-w-xl mx-auto items-center text-center mt-12"):
     ui.image("https://upload.wikimedia.org/wikipedia/en/f/fe/Bremer_SV_logo.png").style("width:150px; margin-bottom:10px;")
     with ui.row().classes("justify-center"):
@@ -213,5 +214,8 @@ with ui.column().classes("w-full max-w-xl mx-auto items-center text-center mt-12
         ui.button("JETZT ANMELDEN", on_click=anmelden).classes("button w-full mt-4")
         ui.label("💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.").classes("hinweis text-center")
 
-# ---------------- START ----------------
-ui.run(title="Fußballcamp Anmeldung", reload=False)
+
+# ---------------- SERVER START ----------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    ui.run(title="Fußballcamp Anmeldung", host="0.0.0.0", port=port, reload=False)
