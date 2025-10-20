@@ -141,11 +141,26 @@ with ui.column().classes("w-full max-w-xl mx-auto items-center text-center mt-12
         ui.button("JETZT ANMELDEN", on_click=anmelden).classes("button w-full mt-4")
         ui.label("💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.")
 
-# ---------------- SERVER START ----------------
-PORT = int(os.environ.get("PORT", 8080))
+# ---------------- SERVER START (Render kompatibel) ----------------
+import os
+from fastapi import FastAPI
+
+# Render.com stellt den Port über eine Umgebungsvariable bereit
+PORT = int(os.environ.get("PORT", 10000))
+
+# ASGI-App für Render
 fastapi_app = FastAPI()
 ui.run_with(fastapi_app)
+
+# Einstiegspunkt für Render (ASGI)
 application = fastapi_app
 
+# Lokaler Start (z. B. auf deinem Mac)
 if __name__ == "__main__":
-    ui.run(title="Fußballcamp Anmeldung", host="0.0.0.0", port=PORT)
+    ui.run(
+        title="Fußballcamp Anmeldung",
+        host="0.0.0.0",
+        port=PORT,
+        reload=False
+    )
+
