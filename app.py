@@ -27,18 +27,21 @@ print("SMTP User:", CFG["smtp_user"])
 
 # ---------------- GOOGLE SHEET VERBINDUNG ----------------
 SCOPE = [
-    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-CREDS = Credentials.from_service_account_info(json.loads(os.environ.get("GOOGLE_CREDENTIALS_JSON"))) \
-    if os.environ.get("GOOGLE_CREDENTIALS_JSON") else \
-    Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
+
+if os.environ.get("GOOGLE_CREDENTIALS_JSON"):
+    creds_info = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+    CREDS = Credentials.from_service_account_info(creds_info, scopes=SCOPE)
+else:
+    CREDS = Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
 
 CLIENT = gspread.authorize(CREDS)
 SHEET = CLIENT.open_by_key("1b26Bz5KfPo1tePKBJ7_3tCM4kpKP5PRCO2xdVr0MMOo").sheet1
 
 
-# ---------------- E-MAIL FUNKTION (TLS Port 587) ----------------
+# ---------------- E-MAIL FUNKTION ----------------
 def send_email(to_address, subject, body):
     msg = MIMEMultipart()
     msg["From"] = f"{CFG['from_name']} <{CFG['smtp_user']}>"
@@ -113,7 +116,6 @@ Zeit: {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}
 
         ui.notify(f"✅ Anmeldung für {vorname.value} {nachname.value} gespeichert & Mails versendet.", color="green")
 
-        # Felder leeren
         vorname.value = nachname.value = alter.value = telefon.value = email.value = ""
         allergien.value = anmerkung.value = ""
         frueh.value = "Keine"
@@ -177,12 +179,21 @@ hr {
     margin: 1rem auto;
     border-radius: 2px;
 }
-.q-menu, .q-dialog, .q-select__dropdown-icon, .q-option {
+
+/* --- Sichtbarkeit-Fix für Render --- */
+.q-menu, .q-dialog, .q-select__dropdown-icon, .q-option, .q-field__native, .q-field__input, .q-field__control {
     color: #002B7F !important;
     background: white !important;
+    font-weight: 500 !important;
 }
 .q-notification__message {
     color: white !important;
+}
+.q-notification__bg--green {
+    background-color: #008000 !important;
+}
+.q-notification__bg--red {
+    background-color: #b00020 !important;
 }
 </style>
 """)
