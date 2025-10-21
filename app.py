@@ -152,31 +152,52 @@ E-Mails und PDFs, erhalten aber auch noch Post, die wir grundsätzlich einscanne
 """
 
 # =========================
-#   E-MAIL FUNKTION
+#   E-MAIL FUNKTION – BREVO API
 # =========================
-def send_email(to_address: str, subject: str, body: str):
-    if not SMTP_PASSWORD:
-        raise RuntimeError('SMTP_PASSWORD fehlt – Versand nicht möglich.')
+import requests
+import logging
+import os
 
-    from_email = CFG['smtp_user']
-    from_name = CFG['from_name']
-    encoded_from = formataddr((str(Header(from_name, 'utf-8')), from_email))
+def send_email(to_address: str, subject: str, body: str) -> bool:
+    api_key = os.getenv('BREVO_API_KEY')
+    sender_email = os.getenv('SENDER_EMAIL', 'fussballschule@bremer-sv.de')
+    sender_name = os.getenv('SENDER_NAME', 'Fußballschule Bremer SV')
 
-    msg = MIMEText(body, 'plain', 'utf-8')
-    msg['From'] = encoded_from
-    msg['To'] = to_address
-    msg['Subject'] = Header(subject, 'utf-8')
-    msg['Date'] = formatdate(localtime=True)
-    msg['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
+    if not api_key:
+        logging.error("❌ Kein BREVO_API_KEY gefunden – Mailversand übersprungen.")
+        return False
+
+    html_body = f"<pre>{body}</pre>"
+
+    payload = {
+        "sender": {"email": sender_email, "name": sender_name},
+        "to": [{"email": to_address}],
+        "subject": subject,
+        "htmlContent": html_body,
+        "textContent": body,
+    }
+
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
 
     try:
-        with smtplib.SMTP_SSL(CFG['smtp_host'], int(CFG['smtp_port']), context=ssl.create_default_context()) as server:
-            server.login(from_email, SMTP_PASSWORD)
-            server.sendmail(from_email, [to_address], msg.as_string())
-        print(f'✅ E-Mail an {to_address} gesendet.')
+        r = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            json=payload,
+            headers=headers,
+            timeout=15,
+        )
+        if r.status_code in (200, 201, 202):
+            logging.info(f"📧 Brevo: Mail an {to_address} erfolgreich gesendet.")
+            return True
+        logging.error(f"❌ Brevo-Fehler {r.status_code}: {r.text}")
+        return False
     except Exception as e:
-        print(f'❌ Fehler beim E-Mail-Versand an {to_address}: {e}')
-        raise
+        logging.error(f"❌ Brevo Netzwerkfehler: {e}")
+        return False
 
 # =========================
 #   ANMELDUNG / SHEET
