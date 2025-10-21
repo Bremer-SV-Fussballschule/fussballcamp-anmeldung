@@ -584,5 +584,18 @@ Es gilt deutsches Recht. Gerichtsstand ist – soweit zulässig – Bremen.
 #   START SERVER
 # =========================
 if __name__ == '__main__':
+    import os
+    import time
+
     port = int(os.environ.get('PORT', 8080))
-    ui.run(title='Fußballcamp Anmeldung', host='0.0.0.0', port=port, reload=False)
+
+    # Sicherheitspause für Render, damit der Port-Binding-Check korrekt greift
+    time.sleep(2)
+    print(f"🌍 Starte NiceGUI auf Port {port}")
+
+    ui.run(
+        title='Fußballcamp Anmeldung',
+        host='0.0.0.0',
+        port=port,
+        reload=False
+    )
