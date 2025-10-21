@@ -14,8 +14,17 @@ import os
 def load_config():
     base_path = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_path, "config.json")
-    with open(config_path, "r") as f:
-        return json.load(f)
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    # 🔒 SMTP-Passwort nur aus Environment laden:
+    cfg["smtp_password"] = os.getenv("SMTP_PASSWORD")
+
+    if not cfg["smtp_password"]:
+        print("⚠️  Hinweis: Keine SMTP_PASSWORD-Variable gefunden. Bitte ENV setzen!")
+    return cfg
+
 
 
 CFG = load_config()
@@ -226,7 +235,7 @@ with ui.column().classes("w-full max-w-xl mx-auto items-center text-center mt-12
         ui.label("💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.").classes("hinweis text-center")
 
 
-# ---------------- SERVER START ----------------
-if __name__ == "__main__":
+if __name__ in {"__main__", "__mp_main__"}:
     port = int(os.environ.get("PORT", 8080))
-    ui.run(title="Fußballcamp Anmeldung", host="0.0.0.0", port=port, reload=False)
+    ui.run(title="Fußballcamp Anmeldung", host="0.0.0.0", port=port)
+
