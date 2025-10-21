@@ -1,2 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+
+# Credentials & Environment
+.env
+*.env
 credentials.json
-credentials.json
+service_account.json
+token.json
+
+# macOS / IDE
+.DS_Store
+.vscode/
+.idea/
