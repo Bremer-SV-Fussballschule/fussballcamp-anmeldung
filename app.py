@@ -120,6 +120,46 @@ def get_camp_prices():
         return {}
 
 # =========================
+#   CAMP-KAPAZITÄTEN UND VERFÜGBARKEIT
+# =========================
+def get_camp_capacities():
+    """Liest die maximale Teilnehmerzahl je Camp aus dem Sheet 'Camp-Preise'."""
+    try:
+        sheet = SPREADSHEET.worksheet('Camp-Preise')
+        data = sheet.get_all_values()
+        capacities = {}
+        for row in data[1:]:
+            if len(row) >= 3 and row[0].strip():
+                camp_name = row[0].strip()
+                try:
+                    capacities[camp_name] = int(row[2])
+                except ValueError:
+                    capacities[camp_name] = None
+        print(f'📈 Camp-Kapazitäten geladen: {capacities}')
+        return capacities
+    except Exception as e:
+        print('⚠️ Fehler beim Laden der Kapazitäten:', e)
+        return {}
+
+def get_registered_count(camp_name):
+    """Zählt, wie viele Teilnehmer bereits im jeweiligen Camp eingetragen sind."""
+    try:
+        worksheet = SPREADSHEET.worksheet(camp_name)
+        data = worksheet.get_all_values()
+        return max(0, len(data) - 1)  # minus Headerzeile
+    except Exception:
+        return 0
+
+def is_camp_full(camp_name):
+    """Prüft, ob das Camp ausgebucht ist."""
+    caps = get_camp_capacities()
+    max_cap = caps.get(camp_name)
+    current = get_registered_count(camp_name)
+    if not max_cap:
+        return False
+    return current >= max_cap
+
+# =========================
 #   E-MAIL SIGNATUR
 # =========================
 EMAIL_SIGNATURE = """\
@@ -152,64 +192,57 @@ E-Mails und PDFs, erhalten aber auch noch Post, die wir grundsätzlich einscanne
 """
 
 # =========================
-#   E-MAIL FUNKTION – BREVO API
+#   E-MAIL FUNKTION
 # =========================
-import requests
-import logging
-import os
+def send_email(to_address: str, subject: str, body: str):
+    if not SMTP_PASSWORD:
+        raise RuntimeError('SMTP_PASSWORD fehlt – Versand nicht möglich.')
 
-def send_email(to_address: str, subject: str, body: str) -> bool:
-    api_key = os.getenv('BREVO_API_KEY')
-    sender_email = os.getenv('SENDER_EMAIL', 'fussballschule@bremer-sv.de')
-    sender_name = os.getenv('SENDER_NAME', 'Fußballschule Bremer SV')
+    from_email = CFG['smtp_user']
+    from_name = CFG['from_name']
+    encoded_from = formataddr((str(Header(from_name, 'utf-8')), from_email))
 
-    if not api_key:
-        logging.error("❌ Kein BREVO_API_KEY gefunden – Mailversand übersprungen.")
-        return False
-
-    html_body = f"<pre>{body}</pre>"
-
-    payload = {
-        "sender": {"email": sender_email, "name": sender_name},
-        "to": [{"email": to_address}],
-        "subject": subject,
-        "htmlContent": html_body,
-        "textContent": body,
-    }
-
-    headers = {
-        "accept": "application/json",
-        "api-key": api_key,
-        "content-type": "application/json",
-    }
+    msg = MIMEText(body, 'plain', 'utf-8')
+    msg['From'] = encoded_from
+    msg['To'] = to_address
+    msg['Subject'] = Header(subject, 'utf-8')
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
 
     try:
-        r = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            json=payload,
-            headers=headers,
-            timeout=15,
-        )
-        if r.status_code in (200, 201, 202):
-            logging.info(f"📧 Brevo: Mail an {to_address} erfolgreich gesendet.")
-            return True
-        logging.error(f"❌ Brevo-Fehler {r.status_code}: {r.text}")
-        return False
+        with smtplib.SMTP_SSL(CFG['smtp_host'], int(CFG['smtp_port']), context=ssl.create_default_context()) as server:
+            server.login(from_email, SMTP_PASSWORD)
+            server.sendmail(from_email, [to_address], msg.as_string())
+        print(f'✅ E-Mail an {to_address} gesendet.')
     except Exception as e:
-        logging.error(f"❌ Brevo Netzwerkfehler: {e}")
-        return False
+        print(f'❌ Fehler beim E-Mail-Versand an {to_address}: {e}')
+        raise
 
 # =========================
 #   ANMELDUNG / SHEET
 # =========================
 def save_to_sheet(camp_name, vorname, nachname, alter, telefon, email, frueh, allergien, anmerkung):
+    """Speichert Anmeldedaten im richtigen Spaltenformat."""
     zeitstempel = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
     try:
         worksheet = SPREADSHEET.worksheet(camp_name)
     except Exception:
         worksheet = SPREADSHEET.add_worksheet(title=camp_name, rows=100, cols=10)
-        worksheet.append_row(["Vorname","Nachname","Alter","Telefon","E-Mail","Frühbetreuung","Allergien","Anmerkung","Zeitstempel"])
-    worksheet.append_row([vorname,nachname,alter,telefon,email,frueh,allergien,anmerkung,zeitstempel])
+        worksheet.append_row([
+            "Vorname", "Nachname", "Alter", "Telefon", "E-Mail",
+            "Allergien", "Frühbetreuung", "Anmerkung", "Zeitstempel"
+        ])
+    worksheet.append_row([
+        vorname,
+        nachname,
+        alter,
+        telefon,
+        email,
+        allergien,
+        frueh,
+        anmerkung,
+        zeitstempel
+    ])
 
 # =========================
 #   ANMELDUNGSPROZESS
@@ -218,6 +251,7 @@ def anmelden():
     def valid_email(x): return '@' in x and '.' in x
     def valid_phone(x): return all(c.isdigit() or c in [' ', '+', '-', '(', ')'] for c in x) and len(x.strip()) >= 6
 
+    # Pflichtfelder prüfen
     if not all([camp.value, vorname.value, nachname.value, alter.value, telefon.value, email.value, frueh.value]):
         ui.notify('Bitte alle Pflichtfelder ausfüllen.', color='red'); return
     if not alter.value.isdigit():
@@ -229,16 +263,22 @@ def anmelden():
     if not agb_checkbox.value:
         ui.notify('Bitte bestätige die AGB, bevor du fortfährst.', color='red'); return
 
+    # Teilnehmerbegrenzung prüfen
+    if is_camp_full(camp.value):
+        ui.notify(f'Das Camp "{camp.value}" ist bereits ausgebucht.', color='red')
+        return
+
     try:
-        # --- Preisberechnung für E-Mail ---
+        # Frühbetreuung + Preis
+        frueh_text = frueh.value if frueh.value else 'Keine'
+
         camp_prices = get_camp_prices()
         base_price = camp_prices.get(camp.value, 0.0)
-        extra_price = 0.0
-        if '15' in (frueh.value or ''):
-            extra_price = 15.0
+
+        extra_price = 15.0 if '08:00' in frueh_text else 0.0
         total_price = base_price + extra_price
 
-        # --- Daten speichern ---
+        # Speicherung in Sheet
         save_to_sheet(
             camp.value,
             vorname.value.strip(),
@@ -246,19 +286,19 @@ def anmelden():
             alter.value.strip(),
             telefon.value.strip(),
             email.value.strip(),
-            frueh.value,
+            frueh_text,
             allergien.value.strip() or 'Keine',
             anmerkung.value.strip() or '-'
         )
 
-        # --- BESTÄTIGUNGSMail MIT PREISZUSAMMENSETZUNG ---
-        send_email(email.value, 'Anmeldebestätigung Fußballcamp',
+        # Bestätigung an Teilnehmer
+        send_email(
+            email.value,
+            'Anmeldebestätigung Fußballcamp',
 f"""Hallo {vorname.value},
 
 vielen Dank für deine Anmeldung zum Fußballcamp! ⚽
 Wir haben deine Daten erhalten und freuen uns auf dich.
-
-Hier nochmal deine Angaben zur Kontrolle:
 
 📋 CAMP-DATEN
 Camp: {camp.value}
@@ -273,7 +313,7 @@ Telefon (Notfall): {telefon.value}
 E-Mail: {email.value}
 
 🕗 FRÜHBETREUUNG
-{frueh.value}
+{frueh_text}
 
 ⚕️ ALLERGIEN / BESONDERHEITEN
 {allergien.value or 'Keine'}
@@ -296,10 +336,13 @@ Viele Grüße,
 
 💡 Hinweis: Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.
 
-{EMAIL_SIGNATURE}""")
+{EMAIL_SIGNATURE}"""
+        )
 
-        # --- INTERNER MAILVERSAND AN SCHULE ---
-        send_email(CFG['school_notify_to'], f'Neue Anmeldung: {vorname.value} {nachname.value}',
+        # Interne Benachrichtigung
+        send_email(
+            CFG['school_notify_to'],
+            f'Neue Anmeldung: {vorname.value} {nachname.value}',
 f"""Neue Anmeldung für das Fußballcamp!
 
 Vorname: {vorname.value}
@@ -308,7 +351,7 @@ Camp: {camp.value}
 Alter: {alter.value}
 Telefon (Notfall): {telefon.value}
 E-Mail: {email.value}
-Frühbetreuung: {frueh.value}
+Frühbetreuung: {frueh_text}
 Allergien/Besonderheiten: {allergien.value or 'Keine'}
 Anmerkung: {anmerkung.value or '-'}
 
@@ -319,11 +362,26 @@ Gesamtbetrag: {total_price:.2f} €
 
 Zeit: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
 
-{EMAIL_SIGNATURE}""")
+{EMAIL_SIGNATURE}"""
+        )
 
-        ui.notify(f'✅ Anmeldung für {vorname.value} {nachname.value} gespeichert & Mails versendet.', color='green')
-        vorname.value = nachname.value = alter.value = telefon.value = email.value = allergien.value = anmerkung.value = ''
-        frueh.value = ''
+        ui.notify(
+            f'✅ Anmeldung für {vorname.value} {nachname.value} gespeichert & Mails versendet.',
+            color='green'
+        )
+
+        # Felder zurücksetzen
+        vorname.value = ''
+        nachname.value = ''
+        alter.value = ''
+        telefon.value = ''
+        email.value = ''
+        allergien.value = ''
+        anmerkung.value = ''
+        frueh.value = 'Keine'
+
+        # Status neu berechnen (z. B. evtl. jetzt ausgebucht)
+        update_camp_status()
 
     except Exception as e:
         ui.notify(f'❌ Fehler: {e}', color='red')
@@ -446,41 +504,38 @@ hr {
 #   UI
 # =========================
 with ui.column().classes('items-center w-full text-center mt-12'):
-    ui.image('https://upload.wikimedia.org/wikipedia/en/f/fe/Bremer_SV_logo.png').style('width:150px; margin-bottom:10px;')
 
+    # Vereinslogo
+    ui.image('https://upload.wikimedia.org/wikipedia/en/f/fe/Bremer_SV_logo.png').style(
+        'width:150px; margin-bottom:10px;'
+    )
+
+    # Kopfbereich
     with ui.column().classes('mainblock'):
         ui.label('⚽ Fußballcamp Anmeldung').classes('text-4xl font-bold')
         ui.html('<hr>', sanitize=False)
         ui.label('Bitte tragt eure Daten vollständig ein.').classes('text-lg')
 
+    # === CAMP-AUSWAHL (wieder oben!) ===
     with ui.column().classes('campblock'):
         ui.label('🏕️ Camp-Auswahl').classes('text-3xl font-bold mb-2')
+
         camp_names = get_camp_names() or ['Camp-Auswahl']
         camp_prices = get_camp_prices()
+        camp_caps = get_camp_capacities()
 
-        camp = ui.select(camp_names, value=camp_names[0], label='Camp').classes('w-full text-lg required')
-        camp_preis_label = ui.label('').classes('text-lg mt-2 text-blue-800 font-bold')
+        camp = ui.select(
+            camp_names,
+            value=camp_names[0] if camp_names else None,
+            label='Camp'
+        ).classes('w-full text-lg required')
 
-        # --- Preisberechnung (inkl. Frühbetreuung) ---
-        def update_total_price(_=None):
-            base = camp_prices.get(camp.value)
-            extra = 0.0
-            if 'frueh' in globals() and frueh.value:
-                if '15' in frueh.value:
-                    extra = 15.0
+        camp_status_label = ui.label('').classes('text-lg mt-2 font-bold text-red-700')
+        camp_preis_label = ui.label('').classes('text-lg mt-1 text-blue-800 font-bold')
 
-            if base is not None:
-                text = f'💰 Teilnahmegebühr: {base:.2f} €'
-                if extra:
-                    text += f' + 15,00 € Frühbetreuung = {(base + extra):.2f} €'
-                camp_preis_label.text = text
-            else:
-                camp_preis_label.text = ''
-
-        camp.on('update:model-value', update_total_price)
-        update_total_price()
         ui.html('<hr>', sanitize=False)
 
+    # === TEILNEHMERDATEN & AGB ===
     with ui.column().classes('mainblock mt-2'):
         with ui.row():
             vorname = ui.input('Vorname').classes('w-full required')
@@ -491,44 +546,18 @@ with ui.column().classes('items-center w-full text-center mt-12'):
         with ui.row():
             email = ui.input('E-Mail (für Bestätigung)').classes('w-full required')
             frueh = ui.select(
-                ['', 'Keine', 'ab 08:00 Uhr (+ 15,00 €)'],
-                value='',
-                label='Frühbetreuung ab …'
+                ['Keine', 'ab 08:00 Uhr (plus 15 Euro)'],
+                value='Keine',
+                label='Frühbetreuung'
             ).classes('w-full required')
-
-        # Frühbetreuung wirkt sich auf den Preis aus
-        frueh.on('update:model-value', update_total_price)
-        update_total_price()
 
         allergien = ui.input('Allergien / Besonderheiten').classes('w-full')
         anmerkung = ui.input('Anmerkung').classes('w-full')
 
-        # 🟩 Preis-Zusammenfassung direkt über dem Button
-        gesamt_label = ui.label('').classes('text-lg font-bold text-green-700 mt-4')
-
-        def update_summary(_=None):
-            base = camp_prices.get(camp.value, 0.0)
-            extra = 0.0
-            if 'frueh' in globals() and frueh.value:
-                if '15' in frueh.value:
-                    extra = 15.0
-            if base:
-                gesamt_label.text = f'➡️ Gesamtbetrag: {(base + extra):.2f} €'
-            else:
-                gesamt_label.text = ''
-
-        camp.on('update:model-value', update_summary)
-        frueh.on('update:model-value', update_summary)
-        update_summary()
-
         ui.label('* Pflichtfelder').style('color: red; font-size: 0.9rem; margin-top: 0.5rem;')
 
-        # =========================
-        #   AGB CHECKBOX + AUSKLAPPEN
-        # =========================
-        with ui.row().classes('items-start mt-4 w-full'):
-            agb_checkbox = ui.checkbox('Ich habe die AGB gelesen und akzeptiere sie.').classes('required')
-
+        # === AGB ===
+        agb_checkbox = ui.checkbox('Ich habe die AGB gelesen und akzeptiere sie.').classes('required')
         agb_expansion = ui.expansion('📄 AGB ausklappen').classes('w-full mt-2 text-blue-900 font-semibold')
         with agb_expansion:
             ui.markdown("""
@@ -587,36 +616,45 @@ Es gilt deutsches Recht. Gerichtsstand ist – soweit zulässig – Bremen.
 *Fußballschule Bremer SV – gemeinsam kicken, lernen, wachsen.*
             """).classes('text-sm leading-relaxed text-left')
 
-        # =========================
-        #   ABSENDEN
-        # =========================
+        # === ABSENDEN ===
         submit_btn = ui.button('JETZT ANMELDEN', on_click=anmelden).classes('button w-full mt-4')
-        # UX: Button nur aktiv, wenn AGB angehakt
         submit_btn.bind_enabled_from(agb_checkbox, 'value')
 
-        ui.label('💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.').classes('hinweis text-center')
-        ui.html(
-            '✉️ Bei Problemen oder anderen Anfragen schreibt uns bitte direkt eine '
-            '<a href="mailto:fussballschule@bremer-sv.de" style="color:#002B7F; text-decoration:underline;">E-Mail</a>.',
-            sanitize=False
-        ).classes('hinweis text-center').style('margin-top:0.5rem;')
+        ui.label('💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.').classes('text-sm mt-2')
+
+    # === Preis- & Kapazitäts-Update ===
+    def update_camp_status(_=None):
+        selected = camp.value
+        max_cap = camp_caps.get(selected)
+        current = get_registered_count(selected)
+        remaining = (max_cap - current) if max_cap else None
+
+        if remaining is None:
+            camp_status_label.text = ''
+            submit_btn.enabled = True
+        elif remaining <= 0:
+            camp_status_label.text = f'❌ Camp ausgebucht ({current}/{max_cap})'
+            camp_status_label.classes(replace='text-lg mt-2 font-bold text-red-700')
+            submit_btn.enabled = False
+        else:
+            color_class = 'text-green-700' if remaining > 5 else 'text-orange-600'
+            camp_status_label.text = f'✅ Noch {remaining} Plätze frei ({current}/{max_cap})'
+            camp_status_label.classes(replace=f'text-lg mt-2 font-bold {color_class}')
+            submit_btn.enabled = True
+
+        base = camp_prices.get(selected)
+        if base is not None:
+            camp_preis_label.text = f'💰 Teilnahmegebühr: {base:.2f} €'
+        else:
+            camp_preis_label.text = ''
+
+    camp.on('update:model-value', update_camp_status)
+    update_camp_status()
 
 # =========================
 #   START SERVER
 # =========================
+print("🧠 Debug: Starte NiceGUI...")
 if __name__ == '__main__':
-    import os
-    import time
-
     port = int(os.environ.get('PORT', 8080))
-
-    # Sicherheitspause für Render, damit der Port-Binding-Check korrekt greift
-    time.sleep(2)
-    print(f"🌍 Starte NiceGUI auf Port {port}")
-
-    ui.run(
-        title='Fußballcamp Anmeldung',
-        host='0.0.0.0',
-        port=port,
-        reload=False
-    )
+    ui.run(title='Fußballcamp Anmeldung', host='0.0.0.0', port=port, reload=False)
