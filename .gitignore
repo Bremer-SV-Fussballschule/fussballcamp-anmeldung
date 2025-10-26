@@ -1,22 +1,71 @@
-# Python
+# ============================================
+#   🧩 GITIGNORE für: BSV Fußballschule – Anmeldungstool
+#   Autor: Sebastian Brokopp
+#   Zweck: Schutz sensibler Daten + sauberes Render-Deployment
+# ============================================
+
+# ---------- PYTHON ----------
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Virtuelle Umgebungen
 .venv/
 venv/
 env/
 ENV/
 
-# Credentials & Environment
+# Build-Ordner / temporäre Dateien
+dist/
+build/
+*.egg-info/
+*.log
+
+# ---------- KONFIGURATION & ZUGANGSDATEN ----------
+# Lokale Umgebungsvariablen
 .env
 *.env
+
+# Google Service Accounts / Tokens
 credentials.json
 service_account.json
 token.json
 
-# macOS / IDE
+# API-Keys, Zertifikate, Backups
+*.key
+*.pem
+*.p12
+*.bak
+
+# ---------- BETRIEBSSYSTEM & IDE ----------
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+# VS Code / PyCharm
 .vscode/
 .idea/
-.env
+# Backup-Dateien
+*.swp
+*.swo
+
+# ---------- TEST & NOTEBOOKS ----------
+*.ipynb_checkpoints
+__pycache__/
+.cache/
+
+# ---------- STATIC CONTENT ----------
+# WICHTIG: Bilder sollen im Repo bleiben!
+# Daher NICHT 'static/' ausschließen.
+# (Damit Render PNGs, Logos etc. korrekt findet.)
+# Nur temporäre Vorschau- oder Cache-Dateien ignorieren:
+static/*.tmp
+static/*.bak
+static/*.old
+static/~*
+
+# ---------- GIT ----------
+# Lokale Git-Artefakte
+.gitignore~
