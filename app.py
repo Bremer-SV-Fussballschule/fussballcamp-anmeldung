@@ -120,6 +120,42 @@ def get_camp_prices():
         return {}
 
 # =========================
+#   CAMP-BILDER LADEN
+# =========================
+def get_camp_images():
+    """Liest Bildpfade oder URLs aus dem Sheet 'Camp-Preise' (Spalte 4).
+    Unterstützt lokale Bilder im Ordner 'static/images' UND externe Links (z. B. https://...).
+    """
+    try:
+        sheet = SPREADSHEET.worksheet('Camp-Preise')
+        data = sheet.get_all_values()
+        images = {}
+        for row in data[1:]:
+            if len(row) >= 4 and row[0].strip() and row[3].strip():
+                camp_name = row[0].strip()
+                img_url = row[3].strip()
+
+                # Falls Google-Drive-Link, automatisch umwandeln
+                if "drive.google.com/file/d/" in img_url:
+                    try:
+                        file_id = img_url.split("/d/")[1].split("/")[0]
+                        img_url = f"https://drive.google.com/uc?export=view&id={file_id}"
+                    except Exception:
+                        pass
+
+                # Falls kein https-Link: Lokale Datei in static/images/
+                elif not img_url.startswith("http"):
+                    img_url = f"static/images/{img_url}"
+
+                images[camp_name] = img_url
+
+        print(f"🖼️ Camp-Bilder geladen: {list(images.keys())}")
+        return images
+    except Exception as e:
+        print("⚠️ Fehler beim Laden der Camp-Bilder:", e)
+        return {}
+    
+# =========================
 #   CAMP-KAPAZITÄTEN UND VERFÜGBARKEIT
 # =========================
 def get_camp_capacities():
@@ -530,24 +566,31 @@ with ui.column().classes('items-center w-full text-center mt-12'):
         ui.html('<hr>', sanitize=False)
         ui.label('Bitte tragt eure Daten vollständig ein.').classes('text-lg')
 
-    # === CAMP-AUSWAHL (wieder oben!) ===
-    with ui.column().classes('campblock'):
-        ui.label('🏕️ Camp-Auswahl').classes('text-3xl font-bold mb-2')
+   # === CAMP-AUSWAHL ===
+with ui.column().classes('campblock'):
+    ui.label('🏕️ Camp-Auswahl').classes('text-3xl font-bold mb-2')
 
-        camp_names = get_camp_names() or ['Camp-Auswahl']
-        camp_prices = get_camp_prices()
-        camp_caps = get_camp_capacities()
+    camp_names = get_camp_names() or ['Camp-Auswahl']
+    camp_prices = get_camp_prices()
+    camp_caps = get_camp_capacities()
+    camp_images = get_camp_images()  # <--- NEU: Bilder laden
 
-        camp = ui.select(
-            camp_names,
-            value=camp_names[0] if camp_names else None,
-            label='Camp'
-        ).classes('w-full text-lg required')
+    camp = ui.select(
+        camp_names,
+        value=camp_names[0] if camp_names else None,
+        label='Camp'
+    ).classes('w-full text-lg required')
 
-        camp_status_label = ui.label('').classes('text-lg mt-2 font-bold text-red-700')
-        camp_preis_label = ui.label('').classes('text-lg mt-1 text-blue-800 font-bold')
+    camp_status_label = ui.label('').classes('text-lg mt-2 font-bold text-red-700')
+    camp_preis_label = ui.label('').classes('text-lg mt-1 text-blue-800 font-bold')
 
-        ui.html('<hr>', sanitize=False)
+    # 🖼️ Camp-Bild (automatisch je nach Auswahl)
+    camp_image = ui.image().classes('w-full rounded-xl shadow-lg mt-4').style(
+        'max-width:500px; border-radius:1rem; display:block; margin:auto; transition:opacity 0.6s ease-in-out;'
+    )
+    camp_image.visible = False  # erst sichtbar, wenn Auswahl getroffen wurde
+
+    ui.html('<hr>', sanitize=False)
 
     # === TEILNEHMERDATEN & AGB ===
     with ui.column().classes('mainblock mt-2'):
@@ -636,34 +679,89 @@ Es gilt deutsches Recht. Gerichtsstand ist – soweit zulässig – Bremen.
 
         ui.label('💡 Sollte keine Bestätigungsmail eingehen, bitte auch im Spam-Ordner nachsehen.').classes('text-sm mt-2')
 
-    # === Preis- & Kapazitäts-Update ===
-    def update_camp_status(_=None):
-        selected = camp.value
-        max_cap = camp_caps.get(selected)
-        current = get_registered_count(selected)
-        remaining = (max_cap - current) if max_cap else None
+# === Preis-, Kapazitäts- & Bild-Update ===
+def update_camp_status(_=None):
+    selected = camp.value
+    max_cap = camp_caps.get(selected)
+    current = get_registered_count(selected)
+    remaining = (max_cap - current) if max_cap else None
 
-        if remaining is None:
-            camp_status_label.text = ''
-            submit_btn.enabled = True
-        elif remaining <= 0:
-            camp_status_label.text = f'❌ Camp ausgebucht ({current}/{max_cap})'
-            camp_status_label.classes(replace='text-lg mt-2 font-bold text-red-700')
-            submit_btn.enabled = False
+    # --- Verfügbarkeit ---
+    if remaining is None:
+        camp_status_label.text = ''
+        submit_btn.enabled = True
+    elif remaining <= 0:
+        camp_status_label.text = f'❌ Camp ausgebucht ({current}/{max_cap})'
+        camp_status_label.classes(replace='text-lg mt-2 font-bold text-red-700')
+        submit_btn.enabled = False
+    else:
+        color_class = 'text-green-700' if remaining > 5 else 'text-orange-600'
+        camp_status_label.text = f'✅ Noch {remaining} Plätze frei ({current}/{max_cap})'
+        camp_status_label.classes(replace=f'text-lg mt-2 font-bold {color_class}')
+        submit_btn.enabled = True
+
+    # --- Preis anzeigen ---
+    base = camp_prices.get(selected)
+    camp_preis_label.text = f'💰 Teilnahmegebühr: {base:.2f} €' if base is not None else ''
+
+    # --- Bild anzeigen ---
+    img_url = camp_images.get(selected)
+    if img_url:
+        camp_image.set_source(img_url)
+        camp_image.visible = True
+    else:
+        camp_image.visible = False
+
+camp.on('update:model-value', update_camp_status)
+update_camp_status()
+
+# =========================
+#   PRE-WARM-TASK
+# =========================
+import asyncio
+
+async def prewarm_app():
+    """Initialisiert Ressourcen, damit die App nach Render-Start sofort reagiert."""
+    print("🧠 Pre-Warm-Task gestartet – initialisiere wichtige Komponenten...")
+
+    try:
+        # 1️⃣ Google Sheets vorladen
+        try:
+            camp_names = get_camp_names()
+            camp_prices = get_camp_prices()
+            camp_caps = get_camp_capacities()
+
+            print(f"📋 Camps geladen: {len(camp_names)}")
+            print(f"💰 Preislisten geladen: {len(camp_prices)}")
+            print(f"📈 Kapazitäten geladen: {len(camp_caps)}")
+            print("🟢 Google Sheets Verbindung aktiv.")
+        except Exception as e:
+            print(f"🔴 Fehler bei Google Sheets: {e}")
+
+        # 2️⃣ Brevo / API-Key prüfen
+        api_key = os.environ.get("BREVO_API_KEY") or os.environ.get("SMTP_PASSWORD")
+        if api_key:
+            print("📡 Brevo API-Key erkannt – Versandmodul bereit.")
         else:
-            color_class = 'text-green-700' if remaining > 5 else 'text-orange-600'
-            camp_status_label.text = f'✅ Noch {remaining} Plätze frei ({current}/{max_cap})'
-            camp_status_label.classes(replace=f'text-lg mt-2 font-bold {color_class}')
-            submit_btn.enabled = True
+            print("⚠️ Kein Brevo API-Key gefunden! Bitte in Render Environment setzen.")
 
-        base = camp_prices.get(selected)
-        if base is not None:
-            camp_preis_label.text = f'💰 Teilnahmegebühr: {base:.2f} €'
-        else:
-            camp_preis_label.text = ''
+        # 3️⃣ Konfiguration prüfen
+        try:
+            print(f"⚙️ SMTP Host: {CFG.get('smtp_host', 'unbekannt')}")
+            print(f"⚙️ SMTP User: {CFG.get('smtp_user', 'unbekannt')}")
+        except Exception:
+            print("⚠️ Keine CFG-Daten verfügbar.")
 
-    camp.on('update:model-value', update_camp_status)
-    update_camp_status()
+        # 4️⃣ Simulierte Initial-Delay (für Cold-Start-Puffer)
+        await asyncio.sleep(1)
+        print("🔥 Pre-Warm abgeschlossen – App vollständig startbereit!")
+
+    except Exception as e:
+        print(f"❌ Unerwarteter Fehler im Pre-Warm-Task: {e}")
+
+
+# Task nach App-Start ausführen
+asyncio.get_event_loop().create_task(prewarm_app())
 
 # =========================
 #   START SERVER
