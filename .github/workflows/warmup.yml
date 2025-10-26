@@ -1,0 +1,15 @@
+name: 🔁 Render Keep-Alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # alle 10 Minuten
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Ping Render Healthcheck"
+        run: |
+          echo "Pinging Render..."
+          curl -s https://bsv-fussballschule-anmeldungen.onrender.com/healthz || true
