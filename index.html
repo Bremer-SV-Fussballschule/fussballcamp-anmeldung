@@ -1,124 +1,90 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>⚽ BSV Fußballcamp Anmeldung</title>
-  <style>
-    /* ---------- GRUNDSTIL ---------- */
-    body {
-      margin: 0;
-      padding: 0;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: linear-gradient(180deg, #00234a 0%, #01396e 100%);
-      color: white;
-      font-family: "Arial", sans-serif;
-      text-align: center;
-      overflow: hidden;
-      transition: background 0.5s ease;
-    }
-
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 0.5rem;
-      color: #76c3ff;
-      animation: fadeIn 1.2s ease-in;
-    }
-
-    p {
-      font-size: 1.1rem;
-      margin-top: 0;
-      opacity: 0.9;
-    }
-
-    /* ---------- LOGO ---------- */
-    .logo {
-      width: 100px;
-      height: auto;
-      margin-bottom: 1rem;
-      animation: pulse 2.5s infinite ease-in-out;
-      filter: drop-shadow(0 0 10px rgba(118, 195, 255, 0.3));
-    }
-
-    @keyframes pulse {
-      0% { transform: scale(1); opacity: 0.9; }
-      50% { transform: scale(1.05); opacity: 1; }
-      100% { transform: scale(1); opacity: 0.9; }
-    }
-
-    /* ---------- LADESPINNER ---------- */
-    .loader {
-      margin: 30px auto;
-      border: 6px solid rgba(255, 255, 255, 0.2);
-      border-top: 6px solid #76c3ff;
-      border-radius: 50%;
-      width: 70px;
-      height: 70px;
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      100% { transform: rotate(360deg); }
-    }
-
-    /* ---------- TRANSITION ---------- */
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ---------- RESPONSIV ---------- */
-    @media (max-width: 600px) {
-      h1 { font-size: 1.6rem; }
-      p { font-size: 1rem; padding: 0 1rem; }
-      .logo { width: 80px; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚽ BSV Fußballcamp Anmeldung</title>
+<style>
+  body {
+    background: linear-gradient(180deg, #00234a 0%, #01396e 100%);
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 0;
+    padding-top: 20vh;
+  }
+  h1 {
+    color: #76c3ff;
+    font-size: 2em;
+    margin-bottom: 0.5em;
+  }
+  .loader {
+    margin: 30px auto;
+    border: 6px solid rgba(255, 255, 255, 0.2);
+    border-top: 6px solid #76c3ff;
+    border-radius: 50%;
+    width: 70px;
+    height: 70px;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    100% { transform: rotate(360deg); }
+  }
+  #status {
+    margin-top: 1em;
+    font-size: 1.1em;
+    opacity: 0.9;
+  }
+  #manual {
+    display: none;
+    margin-top: 2em;
+  }
+  a {
+    color: #76c3ff;
+    font-weight: bold;
+    text-decoration: underline;
+  }
+</style>
 </head>
 <body>
-  <!-- ---------- INHALT ---------- -->
-  <img class="logo" src="https://upload.wikimedia.org/wikipedia/en/f/fe/Bremer_SV_logo.png" alt="BSV Logo">
+  <img src="https://upload.wikimedia.org/wikipedia/en/f/fe/Bremer_SV_logo.png"
+       alt="BSV Logo"
+       style="width:100px;margin-bottom:20px;">
   <h1>⚽ BSV Fußballcamp Anmeldung</h1>
-  <p id="status">Das Anmeldetool startet – bitte einen Moment Geduld …</p>
   <div class="loader"></div>
+  <p id="status">Das Anmeldetool startet – bitte einen Moment Geduld …</p>
+  <p id="manual">Wenn die Seite nach einiger Zeit nicht lädt,
+  <a href="https://bsv-fussballschule-anmeldungen.onrender.com">hier klicken</a>.</p>
 
   <script>
     const renderURL = "https://bsv-fussballschule-anmeldungen.onrender.com";
+    const healthURL = renderURL + "/healthz";
     const statusEl = document.getElementById("status");
+    const manualEl = document.getElementById("manual");
 
     async function waitForRender() {
       while (true) {
         try {
-          // Versuch, den Server "anzutippen", ohne kompletten Seiteninhalt zu laden
-          const res = await fetch(renderURL, {
-            method: "HEAD",
-            mode: "no-cors",
-            cache: "no-store"
-          });
-
-          // Wenn kein Fehler, Render ist wach → Weiterleitung
-          console.log("✅ Render ist wach! Leite weiter …");
-          statusEl.textContent = "Tool bereit – Weiterleitung …";
-          setTimeout(() => {
-            window.location.href = renderURL;
-          }, 500);
-          return;
+          const res = await fetch(healthURL, { method: "GET", cache: "no-store" });
+          if (res.ok) {
+            statusEl.textContent = "Tool ist bereit – du wirst weitergeleitet …";
+            setTimeout(() => window.location.href = renderURL, 800);
+            return;
+          }
         } catch (err) {
-          // Falls Server noch schläft oder 500er gibt → ruhig weiterversuchen
           console.log("⏳ Render schläft oder startet noch …");
           statusEl.textContent = "Das Anmeldetool startet – bitte einen Moment Geduld …";
         }
-
-        // 3 Sekunden warten, dann erneut versuchen
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
 
-    window.onload = waitForRender;
+    // Falls Render länger als 60 Sekunden schläft → Fallback-Link anzeigen
+    setTimeout(() => {
+      manualEl.style.display = "block";
+    }, 60000);
+
+    waitForRender();
   </script>
 </body>
 </html>
