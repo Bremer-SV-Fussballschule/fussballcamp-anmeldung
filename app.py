@@ -192,30 +192,44 @@ E-Mails und PDFs, erhalten aber auch noch Post, die wir grundsätzlich einscanne
 """
 
 # =========================
-#   E-MAIL FUNKTION
+#   E-MAIL FUNKTION (BREVO API)
 # =========================
+import requests
+
 def send_email(to_address: str, subject: str, body: str):
-    if not SMTP_PASSWORD:
-        raise RuntimeError('SMTP_PASSWORD fehlt – Versand nicht möglich.')
+    """Versendet E-Mails über die Brevo API (sicher, portfrei, render-kompatibel)."""
 
-    from_email = CFG['smtp_user']
-    from_name = CFG['from_name']
-    encoded_from = formataddr((str(Header(from_name, 'utf-8')), from_email))
+    api_key = os.environ.get("BREVO_API_KEY")
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY fehlt – Versand nicht möglich.")
 
-    msg = MIMEText(body, 'plain', 'utf-8')
-    msg['From'] = encoded_from
-    msg['To'] = to_address
-    msg['Subject'] = Header(subject, 'utf-8')
-    msg['Date'] = formatdate(localtime=True)
-    msg['Message-ID'] = make_msgid(domain=from_email.split('@')[-1])
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+
+    payload = {
+        "sender": {"name": "BSV Fußballschule", "email": "fussballschule@bremer-sv.de"},
+        "to": [{"email": to_address}],
+        "subject": subject,
+        "textContent": body,
+        "replyTo": {"email": "fussballschule@bremer-sv.de"},
+    }
 
     try:
-        with smtplib.SMTP_SSL(CFG['smtp_host'], int(CFG['smtp_port']), context=ssl.create_default_context()) as server:
-            server.login(from_email, SMTP_PASSWORD)
-            server.sendmail(from_email, [to_address], msg.as_string())
-        print(f'✅ E-Mail an {to_address} gesendet.')
+        print(f"📨 Sende E-Mail an {to_address} über Brevo API...")
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+
+        if response.status_code == 201:
+            print(f"✅ E-Mail erfolgreich an {to_address} gesendet.")
+        else:
+            print(f"❌ Fehler beim Versand an {to_address}: {response.status_code} – {response.text}")
+            response.raise_for_status()
+
     except Exception as e:
-        print(f'❌ Fehler beim E-Mail-Versand an {to_address}: {e}')
+        print(f"❌ Ausnahme beim API-Versand an {to_address}: {e}")
         raise
 
 # =========================

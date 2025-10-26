@@ -1,7 +1,7 @@
 {
-  "smtp_host": "dd48202.kasserver.com",
-  "smtp_port": 465,
-  "smtp_user": "fussballschule@bremer-sv.de",
+  "smtp_host": "smtp-relay.brevo.com",
+  "smtp_port": 587,
+  "smtp_user": "99c418001@smtp-brevo.com",
   "from_name": "Fußballschule Bremer SV",
   "school_notify_to": "fussballschule@bremer-sv.de"
 }
